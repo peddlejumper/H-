@@ -1,0 +1,263 @@
+# H# parser (bootstrap implementation)
+# parse(tokens) -> returns a serializable AST (nested dicts/lists)
+# tokens: list of {"type": str, "value": val}
+
+let __pos = 0;
+let __n = 0;
+let __tokens = [];
+
+fn parse(tokens) {
+    __pos = 0;
+    __n = len(tokens);
+    __tokens = tokens;
+
+    fn cur() {
+        if (__pos >= __n) { return nullptr; }
+        return __tokens[__pos];
+    }
+
+    fn peek_type() {
+        if (__pos >= __n) { return "EOF"; }
+        let t = cur();
+        return t["type"];
+    }
+
+    fn peek_val() {
+        if (__pos >= __n) { return nullptr; }
+        let t = cur();
+        return t["value"];
+    }
+
+    fn advance() {
+        __pos = __pos + 1;
+        return nullptr;
+    }
+
+    fn expect(typ) {
+        if (peek_type() == typ) {
+            let v = peek_val();
+            advance();
+            return v;
+        }
+        # simple error: return nullptr
+        return nullptr;
+    }
+
+    fn parse_program() {
+        let stm = [];
+        while (peek_type() != "EOF") {
+            let s = parse_statement();
+            if (s != nullptr) { push(stm, s); }
+            else { break; }
+        }
+        return ["Program", stm];
+    }
+
+    fn parse_block() {
+        # assume '{' already consumed
+        let statements = [];
+        while (peek_type() != "RBRACE" and peek_type() != "EOF") {
+            let s = parse_statement();
+            if (s != nullptr) { push(statements, s); }
+            else { break; }
+        }
+        expect("RBRACE");
+        return ["BlockStatement", statements];
+    }
+
+    fn parse_statement() {
+        let t = peek_type();
+        # top-level declarations: module, concept, coro, function
+        if (t == "MODULE") {
+            advance();
+            let name = expect("IDENTIFIER");
+            expect("LBRACE");
+            let body = parse_block();
+            return ["ModuleDeclaration", name, body];
+        }
+        if (t == "CONCEPT") {
+            advance();
+            let name = expect("IDENTIFIER");
+            expect("LBRACE");
+            let body = parse_block();
+            return ["ConceptDeclaration", name, body];
+        }
+        if (t == "CORO") {
+            advance();
+            let fname = expect("IDENTIFIER");
+            expect("LPAREN");
+            let params = [];
+            if (peek_type() != "RPAREN") { push(params, expect("IDENTIFIER")); while (peek_type() == "COMMA") { advance(); push(params, expect("IDENTIFIER")); } }
+            expect("RPAREN");
+            expect("LBRACE");
+            let body = parse_block();
+            return ["CoroFunction", fname, params, body];
+        }
+        if (t == "LET") {
+            advance();
+            let name = expect("IDENTIFIER");
+            expect("EQ");
+            let val = parse_expression();
+            expect("SEMI");
+            return ["LetStatement", name, val];
+        }
+        if (t == "PRINT") {
+            advance();
+            # allow optional parens
+            if (peek_type() == "LPAREN") { advance(); let expr = parse_expression(); expect("RPAREN"); expect("SEMI"); return ["PrintStatement", expr]; }
+            let expr2 = parse_expression(); expect("SEMI"); return ["PrintStatement", expr2];
+        }
+        if (t == "FN") {
+            advance();
+            let fname = expect("IDENTIFIER");
+            expect("LPAREN");
+            let params = [];
+            if (peek_type() != "RPAREN") {
+                push(params, expect("IDENTIFIER"));
+                while (peek_type() == "COMMA") { advance(); push(params, expect("IDENTIFIER")); }
+            }
+            expect("RPAREN");
+            expect("LBRACE");
+            let body = parse_block();
+            return ["Function", fname, params, body];
+        }
+        if (t == "RETURN") {
+            advance();
+            let e = parse_expression(); expect("SEMI"); return ["ReturnStatement", e];
+        }
+        if (t == "CONTINUE") { advance(); expect("SEMI"); return ["ContinueStatement"]; }
+        if (t == "BREAK") { advance(); expect("SEMI"); return ["BreakStatement"]; }
+        if (t == "WHILE") {
+            advance(); expect("LPAREN"); let cond = parse_expression(); expect("RPAREN"); expect("LBRACE"); let body = parse_block(); return ["WhileStatement", cond, body];
+        }
+        if (t == "IF") {
+            advance(); expect("LPAREN"); let cond = parse_expression(); expect("RPAREN"); expect("LBRACE"); let cons = parse_block();
+            let alternative = nullptr;
+            if (peek_type() == "ELSE") {
+                advance();
+                if (peek_type() == "IF") {
+                    alternative = parse_statement();
+                } else {
+                    expect("LBRACE");
+                    alternative = parse_block();
+                }
+            }
+            return ["IfStatement", cond, cons, alternative];
+        }
+        if (peek_type() == "LBRACE") { advance(); return parse_block(); }
+
+        # expression statement
+        let expr = parse_expression();
+        if (peek_type() == "SEMI") { advance(); }
+        return expr;
+    }
+
+    # Expressions: precedence climbing via recursive descent
+    fn parse_expression() { return parse_or(); }
+
+    fn parse_or() {
+        let node = parse_and();
+        while (peek_type() == "OR") { let op = expect("OR"); let right = parse_and(); node = ["BinaryOp", node, "OR", right]; }
+        return node;
+    }
+
+    fn parse_and() {
+        let node = parse_equality();
+        while (peek_type() == "AND") { let op = expect("AND"); let right = parse_equality(); node = ["BinaryOp", node, "AND", right]; }
+        return node;
+    }
+
+    fn parse_equality() {
+        let node = parse_comparison();
+        while (peek_type() == "EQEQ" or peek_type() == "BANGEQ") { let op = peek_type(); advance(); let right = parse_comparison(); node = ["BinaryOp", node, (op), right]; }
+        return node;
+    }
+
+    fn parse_comparison() {
+        let node = parse_bitwise_or();
+        while (peek_type() == "GT" or peek_type() == "LT" or peek_type() == "GTE" or peek_type() == "LTE") { let op = peek_type(); advance(); let right = parse_bitwise_or(); node = ["BinaryOp", node, (op), right]; }
+        return node;
+    }
+
+    fn parse_bitwise_or() {
+        let node = parse_bitwise_xor();
+        while (peek_type() == "BITOR") { let op = expect("BITOR"); let right = parse_bitwise_xor(); node = ["BinaryOp", node, "BITOR", right]; }
+        return node;
+    }
+
+    fn parse_bitwise_xor() {
+        let node = parse_bitwise_and();
+        while (peek_type() == "BITXOR") { let op = expect("BITXOR"); let right = parse_bitwise_and(); node = ["BinaryOp", node, "BITXOR", right]; }
+        return node;
+    }
+
+    fn parse_bitwise_and() {
+        let node = parse_shift();
+        while (peek_type() == "BITAND") { let op = expect("BITAND"); let right = parse_shift(); node = ["BinaryOp", node, "BITAND", right]; }
+        return node;
+    }
+
+    fn parse_shift() {
+        let node = parse_add();
+        while (peek_type() == "LSHIFT" or peek_type() == "RSHIFT") { let op = peek_type(); advance(); let right = parse_add(); node = ["BinaryOp", node, (op), right]; }
+        return node;
+    }
+
+    fn parse_equality() {
+        let node = parse_add();
+        while (peek_type() == "EQEQ" or peek_type() == "BANGEQ") {
+            let op = peek_type(); advance(); let right = parse_add(); node = ["BinaryOp", node, (op), right];
+        }
+        return node;
+    }
+
+    fn parse_add() {
+        let node = parse_mul();
+        while (peek_type() == "PLUS" or peek_type() == "MINUS") {
+            let op = peek_type(); advance(); let right = parse_mul(); node = ["BinaryOp", node, (op), right];
+        }
+        return node;
+    }
+
+    fn parse_mul() {
+        let node = parse_unary();
+        while (peek_type() == "STAR" or peek_type() == "SLASH") {
+            let op = peek_type(); advance(); let right = parse_unary(); node = ["BinaryOp", node, (op), right];
+        }
+        return node;
+    }
+
+    fn parse_unary() {
+        if (peek_type() == "MINUS") { advance(); let operand = parse_unary(); return ["UnaryOp", "MINUS", operand]; }
+        if (peek_type() == "NOT") { advance(); let operand = parse_unary(); return ["UnaryOp", "NOT", operand]; }
+        if (peek_type() == "PTR") { advance(); let operand = parse_unary(); return ["PointerDereference", operand]; }
+        return parse_primary();
+    }
+
+    fn parse_primary() {
+        let t = peek_type();
+        if (t == "NUMBER") { let v = peek_val(); advance(); # try convert numeric strings
+            return ["NumberLiteral", v]; }
+        if (t == "STRING") { let v = peek_val(); advance(); return ["StringLiteral", v]; }
+        if (t == "BOOL") { let v = peek_val(); advance(); return ["BooleanLiteral", v]; }
+        if (t == "NULL") { advance(); return ["NullLiteral"]; }
+        if (t == "ASM") { let v = peek_val(); advance(); return ["AsmBlock", v]; }
+        if (t == "IDENTIFIER") {
+            let name = peek_val(); advance();
+            let node = ["Identifier", name];
+            # call chaining
+            while (peek_type() == "LPAREN") {
+                advance(); let args = [];
+                if (peek_type() != "RPAREN") { push(args, parse_expression()); while (peek_type() == "COMMA") { advance(); push(args, parse_expression()); } }
+                expect("RPAREN");
+                node = ["CallExpression", node, args];
+            }
+            return node;
+        }
+        if (t == "LPAREN") { advance(); let expr = parse_expression(); expect("RPAREN"); return expr; }
+        # unknown
+        return nullptr;
+    }
+
+    return parse_program();
+}

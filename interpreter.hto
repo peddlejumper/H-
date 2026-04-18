@@ -1,0 +1,439 @@
+# H# bootstrap interpreter (skeleton)
+# This is the start of the H#-implemented interpreter. It's intentionally
+# small and conservative so the host Python parser can parse and execute it
+# while we progressively port functionality from the Python interpreter.
+
+# AST nodes are expected in the list-style positional format, for example:
+# ["Program", [stm1, stm2, ...]]
+
+fn _env_get(env, name) {
+    let i = 0;
+    while (i < len(env)) {
+        let pair = env[i];
+        if (pair[0] == name) { return pair[1]; }
+        i = i + 1;
+    }
+    return nullptr;
+}
+
+fn _env_set(env, name, val) {
+    let i = 0;
+    while (i < len(env)) {
+        let pair = env[i];
+        if (pair[0] == name) { pair[1] = val; return nullptr; }
+        i = i + 1;
+    }
+    # append
+    push(env, [name, val]);
+}
+
+fn eval_node(node, env) {
+    if (node == nullptr) { return nullptr; }
+    let t = node[0];
+    # Program
+    if (t == "Program") {
+        let i = 0;
+        let stmts = node[1];
+        while (i < len(stmts)) {
+            let r = eval_node(stmts[i], env);
+            if (r != nullptr) { return r; }
+            i = i + 1;
+        }
+        return nullptr;
+    }
+    # Let statement: ["LetStatement", name, value]
+    if (t == "LetStatement") {
+        let name = node[1];
+        let val = eval_node(node[2], env);
+        _env_set(env, name, val);
+        return nullptr;
+    }
+    # Print statement: ["PrintStatement", expr]
+    if (t == "PrintStatement") {
+        let val = eval_node(node[1], env);
+        # call host print via a pseudo-call by returning a marker; the host
+        # driver can decide how to map this. For now return the value.
+        return ["__PRINT__", val];
+    }
+    # Literals and identifiers
+    if (t == "NumberLiteral") { return node[1]; }
+    if (t == "StringLiteral") { return node[1]; }
+    if (t == "BooleanLiteral") { return node[1]; }
+    if (t == "NullLiteral") { return nullptr; }
+    if (t == "Identifier") {
+        return _env_get(env, node[1]);
+    }
+    # Array and dict literals: ["ArrayLiteral", [elems...]]  ["DictLiteral", [[k,v],...]]
+    if (t == "ArrayLiteral") {
+        let out = [];
+        let i = 0;
+        let elems = node[1] or [];
+        while (i < len(elems)) { push(out, eval_node(elems[i], env)); i = i + 1; }
+        return out;
+    }
+    if (t == "DictLiteral") {
+        let pairs = [];
+        let i = 0;
+        let pv = node[1] or [];
+        while (i < len(pv)) {
+            let pair = pv[i];
+            let k = eval_node(pair[0], env);
+            let v = eval_node(pair[1], env);
+            push(pairs, [k, v]);
+            i = i + 1;
+        }
+        return pairs;
+    }
+    # IndexExpression: ["IndexExpression", left, index]
+    if (t == "IndexExpression") {
+        let left = eval_node(node[1], env);
+        let idx = eval_node(node[2], env);
+        if (left == nullptr) { return nullptr; }
+        return left[idx];
+    }
+    # MemberExpression: ["MemberExpression", left, name]
+    if (t == "MemberExpression") {
+        let left = eval_node(node[1], env);
+        let name = node[2];
+        if (left == nullptr) { return nullptr; }
+        # left expected to be list of pairs or object dict
+        let i = 0;
+        while (i < len(left)) {
+            let p = left[i];
+            if (p[0] == name) { return p[1]; }
+            i = i + 1;
+        }
+        return nullptr;
+    }
+    # AssignmentIdentifier: ["AssignmentIdentifier", name, value]
+    if (t == "AssignmentIdentifier") {
+        let name = node[1];
+        let val = eval_node(node[2], env);
+        _env_set(env, name, val);
+        return nullptr;
+    }
+    # AssignmentIndex: ["AssignmentIndex", array, index, value]
+    if (t == "AssignmentIndex") {
+        let arr = eval_node(node[1], env);
+        let idx = eval_node(node[2], env);
+        let val = eval_node(node[3], env);
+        if (arr != nullptr) { arr[idx] = val; }
+        return nullptr;
+    }
+    # AssignmentMember: ["AssignmentMember", left, name, value]
+    if (t == "AssignmentMember") {
+        let left = eval_node(node[1], env);
+        let name = node[2];
+        let val = eval_node(node[3], env);
+        if (left != nullptr) {
+            let i = 0;
+            while (i < len(left)) {
+                if (left[i][0] == name) { left[i][1] = val; return nullptr; }
+                i = i + 1;
+            }
+            push(left, [name, val]);
+        }
+        return nullptr;
+    }
+    # BlockStatement: evaluate statements and propagate control markers
+    if (t == "BlockStatement") {
+        let i = 0;
+        let stmts = node[1] or [];
+        while (i < len(stmts)) {
+            let r = eval_node(stmts[i], env);
+            if (r != nullptr) { return r; }
+            i = i + 1;
+        }
+        return nullptr;
+    }
+    # Function declaration: ["Function", name, params, body]
+    if (t == "Function") {
+        let name = node[1];
+        let params = node[2] or [];
+        let body = node[3];
+        # capture closure: shallow copy of env
+        let closure = [];
+        let i = 0;
+        while (i < len(env)) { push(closure, env[i]); i = i + 1; }
+        let fobj = ["__FUNCTION__", params, body, closure];
+        _env_set(env, name, fobj);
+        return nullptr;
+    }
+    # Return statement: ["ReturnStatement", expr]
+    if (t == "ReturnStatement") {
+        let v = eval_node(node[1], env);
+        return ["__RETURN__", v];
+    }
+    # Continue / Break
+    if (t == "ContinueStatement") { return ["__CONTINUE__"]; }
+    if (t == "BreakStatement") { return ["__BREAK__"]; }
+    # If statement: ["IfStatement", cond, consequence, alternative]
+    if (t == "IfStatement") {
+        let cond = eval_node(node[1], env);
+        if (cond) {
+            return eval_node(node[2], env);
+        } else {
+            if (node[3] != nullptr) { return eval_node(node[3], env); }
+            return nullptr;
+        }
+    }
+    # While statement: ["WhileStatement", cond, body]
+    if (t == "WhileStatement") {
+        while (true) {
+            let cond = eval_node(node[1], env);
+            if (not cond) { break; }
+            let r = eval_node(node[2], env);
+            if (r != nullptr) {
+                if (r[0] == "__CONTINUE__") { continue; }
+                if (r[0] == "__BREAK__") { break; }
+                return r;
+            }
+        }
+        return nullptr;
+    }
+    # For statement: ["ForStatement", var1, var2, iterable, body]
+    if (t == "ForStatement") {
+        let var1 = node[1];
+        let var2 = node[2];
+        let iterable = eval_node(node[3], env);
+        if (iterable == nullptr) { return nullptr; }
+        let i = 0;
+        while (i < len(iterable)) {
+            let item = iterable[i];
+            # create loop env
+            let loop_env = [];
+            push(loop_env, [var1, item]);
+            if (var2 != nullptr and len(item) == 2) { push(loop_env, [var2, item[1]]); }
+            let r = eval_node(node[4], loop_env);
+            if (r != nullptr) {
+                if (r[0] == "__CONTINUE__") { i = i + 1; continue; }
+                if (r[0] == "__BREAK__") { break; }
+                return r;
+            }
+            i = i + 1;
+        }
+        return nullptr;
+    }
+    # CallExpression: ["CallExpression", funcnode, args]
+    if (t == "CallExpression") {
+        # Evaluate function expression - for now only support calling a builtin named identifier
+        let fnnode = node[1];
+        let args = node[2] or [];
+        if (fnnode[0] == "Identifier") {
+            let fname = fnnode[1];
+            # For bootstrap, expose a few well-known host functions by name.
+            if (fname == "print") {
+                let i = 0; let out = [];
+                while (i < len(args)) { push(out, eval_node(args[i], env)); i = i + 1; }
+                # return array of evaluated args to indicate printable result
+                return ["__PRINT__", out];
+            }
+        }
+        # function object support: a function value is represented as ["__FUNCTION__", params, body, closure_env]
+        let fval = nullptr;
+        if (fnnode[0] == "Identifier") {
+            let fname = fnnode[1];
+            # builtins
+            if (fname == "print") {
+                let i = 0; let out = [];
+                while (i < len(args)) { push(out, eval_node(args[i], env)); i = i + 1; }
+                return ["__PRINT__", out];
+            }
+            # lookup in env
+            fval = _env_get(env, fname);
+        } else {
+            fval = eval_node(fnnode, env);
+        }
+        # if fval is a function closure
+        if (fval != nullptr and fval[0] == "__FUNCTION__") {
+            let fparams = fval[1] or [];
+            let fbody = fval[2];
+            let fclosure = fval[3] or [];
+            # build call env
+            let call_env = [];
+            # copy closure bindings
+            let i = 0;
+            while (i < len(fclosure)) { push(call_env, fclosure[i]); i = i + 1; }
+            # bind parameters
+            let j = 0;
+            while (j < len(fparams)) {
+                let pname = fparams[j];
+                let aval = nullptr;
+                if (j < len(args)) { aval = eval_node(args[j], env); }
+                push(call_env, [pname, aval]);
+                j = j + 1;
+            }
+            # execute body
+            return eval_node(fbody, call_env);
+        }
+        return nullptr;
+    }
+    # ModuleDeclaration: ["ModuleDeclaration", name, body]
+    if (t == "ModuleDeclaration") {
+        let name = node[1];
+        let body = node[2];
+        let mod_env = [];
+        # execute body in module env
+        let items = nullptr;
+        if (body != nullptr and len(body) > 1) { items = body[1]; }
+        if (items == nullptr) { items = []; }
+        let i = 0;
+        while (i < len(items)) {
+            let r = eval_node(items[i], mod_env);
+            if (r != nullptr) { return r; }
+            i = i + 1;
+        }
+        # export module as list of pairs under name
+        _env_set(env, name, mod_env);
+        return nullptr;
+    }
+    # ConceptDeclaration: ["ConceptDeclaration", name, body]
+    if (t == "ConceptDeclaration") {
+        let name = node[1];
+        let body = node[2];
+        # store concept signature under special __interfaces__ list
+        let interfaces = _env_get(env, "__interfaces__");
+        if (interfaces == nullptr) { interfaces = []; _env_set(env, "__interfaces__", interfaces); }
+        let methods = [];
+        let items = nullptr;
+        if (body != nullptr and len(body) > 1) { items = body[1]; }
+        if (items == nullptr) { items = []; }
+        let i = 0;
+        while (i < len(items)) {
+            let s = items[i];
+            if (s[0] == "Function") {
+                let mname = s[1];
+                let mparams = [];
+                if (len(s) > 2 and s[2] != nullptr) { mparams = s[2]; }
+                push(methods, [mname, len(mparams)]);
+            }
+            i = i + 1;
+        }
+        push(interfaces, [name, methods]);
+        return nullptr;
+    }
+    # AsmBlock: ["AsmBlock", code]
+    if (t == "AsmBlock") {
+        return ["__ASM__", node[1]];
+    }
+    # ImportStatement: ["ImportStatement", path]
+    if (t == "ImportStatement") {
+        let pathnode = node[1];
+        # if pathnode is StringLiteral form ["StringLiteral", val]
+        if (pathnode != nullptr and pathnode[0] == "StringLiteral") {
+            return ["__IMPORT__", pathnode[1]];
+        }
+        # if identifier, return import by name
+        if (pathnode != nullptr and pathnode[0] == "Identifier") {
+            return ["__IMPORT__", pathnode[1]];
+        }
+        return ["__IMPORT__", nullptr];
+    }
+    # ClassDeclaration: ["ClassDeclaration", name, body, base, implements]
+    if (t == "ClassDeclaration") {
+        let name = node[1];
+        let body = node[2];
+        let base = nullptr;
+        if (len(node) > 3) { base = node[3]; }
+        let impls = [];
+        if (len(node) > 4 and node[4] != nullptr) { impls = node[4]; }
+        # collect methods declared in class body
+        let methods = [];
+        let items = nullptr;
+        if (body != nullptr and len(body) > 1) { items = body[1]; }
+        if (items == nullptr) { items = []; }
+        let i = 0;
+        while (i < len(items)) {
+            let s = items[i];
+            if (s[0] == "Function") {
+                let fname = s[1];
+                let fparams = [];
+                if (len(s) > 2 and s[2] != nullptr) { fparams = s[2]; }
+                let fbody = nullptr;
+                if (len(s) > 3) { fbody = s[3]; }
+                push(methods, [fname, fparams, fbody]);
+            }
+            i = i + 1;
+        }
+        # concept/interface check: lookup __interfaces__
+        let interfaces = _env_get(env, "__interfaces__");
+        let j = 0;
+        while (j < len(impls)) {
+            let iname = impls[j];
+            let found = nullptr;
+            let k = 0;
+            while (interfaces != nullptr and k < len(interfaces)) {
+                let pair = interfaces[k];
+                if (pair[0] == iname) { found = pair[1]; break; }
+                k = k + 1;
+            }
+            if (found == nullptr) { return ["__ERROR__", "Interface not found: " + iname]; }
+            # found is list of [methodName, arity] expected
+            let m = 0;
+            while (m < len(found)) {
+                let need_pair = found[m];
+                let need_name = need_pair[0];
+                let need_arity = 0;
+                if (len(need_pair) > 1) { need_arity = need_pair[1]; }
+                # check methods list for matching name and arity
+                let ok = false;
+                let mm = 0;
+                while (mm < len(methods)) {
+                    let mname = methods[mm][0];
+                    let mparams = [];
+                    if (len(methods[mm]) > 1 and methods[mm][1] != nullptr) { mparams = methods[mm][1]; }
+                    let m_arity = len(mparams);
+                    if (mname == need_name and m_arity == need_arity) { ok = true; break; }
+                    mm = mm + 1;
+                }
+                if (not ok) { return ["__CONCEPT_FAIL__", name, need_name]; }
+                m = m + 1;
+            }
+            j = j + 1;
+        }
+        # if checks pass, store class as env entry with methods
+        let class_rep = ["__CLASS__", name, methods, base, impls];
+        _env_set(env, name, class_rep);
+        return nullptr;
+    }
+    # NewExpression: ["NewExpression", classNode, [args...]]
+    if (t == "NewExpression") {
+        let cname = nullptr;
+        let cn = node[1];
+        if (cn != nullptr) {
+            if (cn[0] == "Identifier") { cname = cn[1]; }
+            else { cname = cn; }
+        }
+        let crep = _env_get(env, cname);
+        if (crep == nullptr) { return nullptr; }
+        # create instance as list of pairs
+        let inst = [];
+        # reference class
+        push(inst, ["__class__", crep]);
+        # initialize methods as callable closures capturing 'this'
+        let meths = crep[2] or [];
+        let mi = 0;
+        while (mi < len(meths)) {
+            let m = meths[mi];
+            let mname = m[0];
+            let mparams = [];
+            if (len(m) > 1 and m[1] != nullptr) { mparams = m[1]; }
+            let mbody = nullptr;
+            if (len(m) > 2) { mbody = m[2]; }
+            # create function object representation: ["__FUNCTION__", params, body, closure]
+            let closure = [];
+            push(closure, ["this", inst]);
+            let fobj = ["__FUNCTION__", mparams, mbody, closure];
+            push(inst, [mname, fobj]);
+            mi = mi + 1;
+        }
+        return inst;
+    }
+    # unknown node: return nullptr
+    return nullptr;
+}
+
+fn interpret(ast) {
+    let env = [];
+    return eval_node(ast, env);
+}

@@ -1,0 +1,74 @@
+// H# GUI Example - Complete Demo
+// Demonstrates all available GUI components
+
+import hsharp_gui;
+
+let gui = get_gui();
+let window = create_window("H# GUI Demo", 800, 600);
+
+// Add menu
+window.add_menu("File");
+window.add_menu("Edit");
+window.add_menu("Help");
+
+// Add toolbar button
+window.add_toolbar_button("New", null);
+window.add_toolbar_button("Open", null);
+window.add_toolbar_button("Save", null);
+
+// Title
+window.add_label("H# GUI Components Demo");
+
+// Text input section
+window.add_label("Text Input:");
+window.add_text_input("Enter your name...", "name_input");
+
+// Text area
+window.add_label("Multi-line Text:");
+window.add_text_area("text_area");
+
+// Combo box
+window.add_label("Select Option:");
+window.add_combo_box(["Option 1", "Option 2", "Option 3"], "combo");
+
+// Checkbox
+window.add_checkbox("Enable Feature", true, "checkbox");
+
+// Slider
+window.add_label("Volume:");
+window.add_slider(0, 100, 50, "slider");
+
+// Progress bar
+window.add_label("Progress:");
+window.add_progress_bar("progress");
+
+// Spin box
+window.add_label("Count:");
+window.add_spin_box(0, 100, 10, "spinbox");
+
+// Buttons
+window.start_horizontal_layout();
+window.add_button("OK", null, "btn_ok");
+window.add_button("Cancel", null, "btn_cancel");
+window.add_button("Show Message", null, "btn_msg");
+window.end_layout();
+
+window.add_stretch();
+
+// Set initial status
+window.set_status("Demo ready - interact with components!");
+
+print("GUI Demo window created with all components!");
+print("Components available:");
+print("- Menu bar with File, Edit, Help menus");
+print("- Toolbar with New, Open, Save buttons");
+print("- Text input and text area");
+print("- Combo box (dropdown)");
+print("- Checkbox");
+print("- Slider");
+print("- Progress bar");
+print("- Spin box");
+print("- Multiple buttons");
+
+window.show();
+run_gui();

@@ -1,0 +1,24 @@
+# Minimal H# bootstrap program
+# This file is written in H# and is intended to be executed by the
+# existing Python-based H# interpreter as the first-stage bootstrap.
+
+# Minimal helpers that will later be expanded into a H#-implemented
+# lexer/parser/interpreter. For now these are small H# routines used
+# to validate the workflow of "writing H# that runs on H#".
+
+fn add(a, b) {
+    return a + b;
+}
+
+fn greeting(name) {
+    print("Hello "+ name);
+}
+
+fn main() {
+    let x = add(2, 3);
+    print(x);
+    greeting("bootstrap");
+}
+
+# Invoke main
+main();

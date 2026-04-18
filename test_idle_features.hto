@@ -1,0 +1,59 @@
+# Test file for IDLE features
+
+let x = 10
+let y = 20
+
+fn add(a, b) {
+    return a + b
+}
+
+fn multiply(a, b) {
+    return a * b
+}
+
+let sum = add(x, y)
+let product = multiply(x, y)
+
+print("Sum: " + sum)
+print("Product: " + product)
+
+if x < y {
+    print("x is less than y")
+} else {
+    print("x is not less than y")
+}
+
+for i in [1, 2, 3, 4, 5] {
+    print("Iteration: " + i)
+}
+
+class Animal {
+    private name
+    
+    fn setName(n) {
+        name = n
+    }
+    
+    fn speak() {
+        print(name + " makes a sound")
+    }
+}
+
+class Dog extends Animal {
+    fn speak() {
+        print(name + " says: woof!")
+    }
+}
+
+let dog = new Dog()
+dog.setName("Buddy")
+dog.speak()
+
+let flag = true and (5 > 3)
+if not flag {
+    print("Flag is false")
+} else {
+    print("Flag is true")
+}
+
+print("All tests completed!")

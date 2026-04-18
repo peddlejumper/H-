@@ -1,0 +1,231 @@
+# Minimal H# tokenizer implemented in H#
+# Returns a list of tokens where each token is a dict: {"type": str, "value": val}
+
+fn is_digit(ch) {
+    return ch >= "0" and ch <= "9";
+}
+
+fn is_alpha(ch) {
+    return (ch >= "a" and ch <= "z") or (ch >= "A" and ch <= "Z") or ch == "_";
+}
+
+fn is_alnum(ch) {
+    return is_alpha(ch) or is_digit(ch);
+}
+
+fn tokenize(src) {
+    let i = 0;
+    let n = len(src);
+    let tokens = [];
+
+    while (i < n) {
+        let ch = src[i];
+        # skip whitespace
+        if (ch == " " or ch == "\t" or ch == "\n" or ch == "\r") {
+            i = i + 1;
+            continue;
+        }
+        # comments starting with # to end of line
+        if (ch == "#") {
+            while (i < n and src[i] != "\n") {
+                i = i + 1;
+            }
+            continue;
+        }
+        # identifiers / keywords
+            if (is_alpha(ch)) {
+            let start = i;
+            let s = "";
+            while (i < n and is_alnum(src[i])) {
+                s = s + src[i];
+                i = i + 1;
+            }
+            # keywords handling
+            if (s == "let") {
+                push(tokens, {"type":"LET", "value":nullptr});
+            } else if (s == "fn") {
+                push(tokens, {"type":"FN", "value":nullptr});
+                } else if (s == "coro") {
+                push(tokens, {"type":"CORO", "value":nullptr});
+                } else if (s == "module") {
+                    push(tokens, {"type":"MODULE", "value":nullptr});
+                } else if (s == "concept") {
+                    push(tokens, {"type":"CONCEPT", "value":nullptr});
+                } else if (s == "asm") {
+                    # inline asm: capture until matching "}" as raw string
+                    # skip whitespace
+                    while (i < n and (src[i] == " " or src[i] == "\t" or src[i] == "\n" or src[i] == "\r")) { i = i + 1; }
+                    if (i < n and src[i] == "{") {
+                        i = i + 1;
+                        let depth = 1;
+                        let block = "";
+                        while (i < n and depth > 0) {
+                            if (src[i] == "{") { depth = depth + 1; block = block + src[i]; i = i + 1; continue; }
+                            if (src[i] == "}") { depth = depth - 1; if (depth == 0) { i = i + 1; break; } block = block + src[i]; i = i + 1; continue; }
+                            block = block + src[i];
+                            i = i + 1;
+                        }
+                        push(tokens, {"type":"ASM", "value": block});
+                        continue;
+                    } else {
+                        push(tokens, {"type":"ASM", "value":nullptr});
+                    }
+            } else if (s == "print") {
+                push(tokens, {"type":"PRINT", "value":nullptr});
+            } else if (s == "return") {
+                push(tokens, {"type":"RETURN", "value":nullptr});
+            } else if (s == "true") {
+                push(tokens, {"type":"BOOL", "value":true});
+            } else if (s == "false") {
+                push(tokens, {"type":"BOOL", "value":false});
+                } else if (s == "ptr") {
+                    push(tokens, {"type":"PTR", "value":nullptr});
+                } else if (s == "is") {
+                    push(tokens, {"type":"IS", "value":nullptr});
+                } else if (s == "as") {
+                    push(tokens, {"type":"AS", "value":nullptr});
+                } else if (s == "continue") {
+                    push(tokens, {"type":"CONTINUE", "value":nullptr});
+                } else if (s == "break") {
+                    push(tokens, {"type":"BREAK", "value":nullptr});
+            } else {
+                push(tokens, {"type":"IDENTIFIER", "value":s});
+            }
+            continue;
+        }
+        # numbers (int or float)
+        if (is_digit(ch)) {
+            let num = "";
+            while (i < n and is_digit(src[i])) {
+                num = num + src[i];
+                i = i + 1;
+            }
+            if (i < n and src[i] == ".") {
+                num = num + ".";
+                i = i + 1;
+                let frac = "";
+                while (i < n and is_digit(src[i])) {
+                    frac = frac + src[i];
+                    i = i + 1;
+                }
+                if (frac == "") {
+                    # malformed, treat as int followed by dot
+                    push(tokens, {"type":"NUMBER", "value": num});
+                } else {
+                    num = num + frac;
+                    # convert to float via simple parse: not available, keep as string and let host interpret if needed
+                    push(tokens, {"type":"NUMBER", "value": num});
+                }
+            } else {
+                push(tokens, {"type":"NUMBER", "value": num});
+            }
+            continue;
+        }
+        # strings
+        if (ch == "\"") {
+            i = i + 1;
+            let s = "";
+            while (i < n and src[i] != "\"") {
+                if (src[i] == "\\") {
+                    i = i + 1;
+                    if (i >= n) {
+                        break;
+                    }
+                    if (src[i] == "n") {
+                        s = s + "\n";
+                    } else if (src[i] == "\"") {
+                        s = s + "\"";
+                    } else {
+                        s = s + "\\" + src[i];
+                    }
+                    i = i + 1;
+                } else {
+                    s = s + src[i];
+                    i = i + 1;
+                }
+            }
+            # consume closing quote if present
+            if (i < n and src[i] == "\"") {
+                i = i + 1;
+            }
+            push(tokens, {"type":"STRING", "value": s});
+            continue;
+        }
+        # multi-char operators
+        if (ch == "=") {
+            if (i + 1 < n and src[i+1] == "=") {
+                push(tokens, {"type":"EQEQ", "value":"=="});
+                i = i + 2;
+                continue;
+            }
+            push(tokens, {"type":"EQ", "value":"="});
+            i = i + 1;
+            continue;
+        }
+        if (ch == "!") {
+            if (i + 1 < n and src[i+1] == "=") {
+                push(tokens, {"type":"BANGEQ", "value":"!="});
+                i = i + 2;
+                continue;
+            }
+            # unsupported lone !
+            i = i + 1;
+            continue;
+        }
+        if (ch == ">") {
+            if (i + 1 < n and src[i+1] == ">") {
+                push(tokens, {"type":"RSHIFT", "value":">>"});
+                i = i + 2;
+                continue;
+            }
+            if (i + 1 < n and src[i+1] == "=") {
+                push(tokens, {"type":"GTE", "value":">="});
+                i = i + 2;
+                continue;
+            }
+            push(tokens, {"type":"GT", "value": ">"});
+            i = i + 1;
+            continue;
+        }
+        if (ch == "<") {
+            if (i + 1 < n and src[i+1] == "<") {
+                push(tokens, {"type":"LSHIFT", "value":"<<"});
+                i = i + 2;
+                continue;
+            }
+            if (i + 1 < n and src[i+1] == "=") {
+                push(tokens, {"type":"LTE", "value":"<="});
+                i = i + 2;
+                continue;
+            }
+            push(tokens, {"type":"LT", "value":"<"});
+            i = i + 1;
+            continue;
+        }
+        # single char tokens
+        if (ch == "+") { push(tokens, {"type":"PLUS","value":"+"}); i = i + 1; continue; }
+        if (ch == "-") { push(tokens, {"type":"MINUS","value":"-"}); i = i + 1; continue; }
+        if (ch == "*") { push(tokens, {"type":"STAR","value":"*"}); i = i + 1; continue; }
+        if (ch == "/") { push(tokens, {"type":"SLASH","value":"/"}); i = i + 1; continue; }
+        if (ch == "&") { push(tokens, {"type":"BITAND","value":"&"}); i = i + 1; continue; }
+        if (ch == "|") { push(tokens, {"type":"BITOR","value":"|"}); i = i + 1; continue; }
+        if (ch == "^") { push(tokens, {"type":"BITXOR","value":"^"}); i = i + 1; continue; }
+        if (ch == "~") { push(tokens, {"type":"TILDE","value":"~"}); i = i + 1; continue; }
+        if (ch == ";") { push(tokens, {"type":"SEMI","value":";"}); i = i + 1; continue; }
+        if (ch == "(") { push(tokens, {"type":"LPAREN","value":"("}); i = i + 1; continue; }
+        if (ch == ")") { push(tokens, {"type":"RPAREN","value":")"}); i = i + 1; continue; }
+        if (ch == "{") { push(tokens, {"type":"LBRACE","value":"{"}); i = i + 1; continue; }
+        if (ch == "}") { push(tokens, {"type":"RBRACE","value":"}"}); i = i + 1; continue; }
+        if (ch == "[") { push(tokens, {"type":"LBRACKET","value":"["}); i = i + 1; continue; }
+        if (ch == "]") { push(tokens, {"type":"RBRACKET","value":"]"}); i = i + 1; continue; }
+        if (ch == ":") { push(tokens, {"type":"COLON","value":":"}); i = i + 1; continue; }
+        if (ch == ",") { push(tokens, {"type":"COMMA","value":","}); i = i + 1; continue; }
+        if (ch == ".") { push(tokens, {"type":"DOT","value":"."}); i = i + 1; continue; }
+
+        # unknown char: skip
+        i = i + 1;
+    }
+
+    push(tokens, {"type":"EOF","value":nullptr});
+    return tokens;
+}

@@ -1,0 +1,16 @@
+let x = 10;
+let y = 20;
+let sum = x + y;
+print(sum);
+
+fn greet(name) {
+    print("Hello, " + name + "!");
+}
+
+greet("World");
+
+let i = 0;
+while (i < 3) {
+    print(i);
+    let i = i + 1;
+}

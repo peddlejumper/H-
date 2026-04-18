@@ -1,0 +1,1 @@
+{"instructions": [["LOAD_CONST", 0], ["STORE_NAME", "x"], ["LOAD_NAME", "x"], ["PRINT", null], ["HALT", null]], "consts": [10]}

@@ -1,0 +1,55 @@
+// H# GUI Example - Simple Calculator
+// This demonstrates the powerful GUI functionality
+
+import hsharp_gui;
+
+let gui = get_gui();
+let window = create_window("H# Calculator", 400, 500);
+
+// Add title label
+window.add_label("H# Calculator");
+
+// Add display
+window.add_text_input("0", "display");
+
+// Start horizontal layouts for buttons
+window.start_horizontal_layout();
+window.add_button("7", null, "btn7");
+window.add_button("8", null, "btn8");
+window.add_button("9", null, "btn9");
+window.add_button("/", null, "btn_div");
+window.end_layout();
+
+window.start_horizontal_layout();
+window.add_button("4", null, "btn4");
+window.add_button("5", null, "btn5");
+window.add_button("6", null, "btn6");
+window.add_button("*", null, "btn_mul");
+window.end_layout();
+
+window.start_horizontal_layout();
+window.add_button("1", null, "btn1");
+window.add_button("2", null, "btn2");
+window.add_button("3", null, "btn3");
+window.add_button("-", null, "btn_sub");
+window.end_layout();
+
+window.start_horizontal_layout();
+window.add_button("0", null, "btn0");
+window.add_button(".", null, "btn_dot");
+window.add_button("=", null, "btn_eq");
+window.add_button("+", null, "btn_add");
+window.end_layout();
+
+window.add_stretch();
+
+// Store current expression
+let expression = "";
+
+// Define button click handlers using Python interop
+// Note: In a real implementation, you would connect these properly
+print("Calculator window created!");
+print("Click buttons to build expression");
+
+window.show();
+run_gui();
